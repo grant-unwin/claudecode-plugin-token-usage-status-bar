@@ -5,8 +5,12 @@ description: Install a tmux status bar showing live token usage
 Run the following commands to set up a tmux status bar that displays live token usage:
 
 1. First check if tmux is installed by running: `which tmux`
-2. If tmux is not installed, tell the user they need to install tmux first (`brew install tmux` on macOS, `apt install tmux` on Ubuntu/Debian).
-3. If tmux is installed, append these lines to `~/.tmux.conf` (create the file if it doesn't exist), but ONLY if they are not already present:
+2. If tmux is not installed, install it automatically:
+   - On macOS: `brew install tmux`
+   - On Ubuntu/Debian: `sudo apt install -y tmux`
+   - On other Linux: `sudo yum install -y tmux` or `sudo pacman -S tmux`
+   If the install fails, tell the user what went wrong and ask them to install tmux manually.
+3. Once tmux is installed, append these lines to `~/.tmux.conf` (create the file if it doesn't exist), but ONLY if they are not already present:
 
 ```
 # Claude Code Token Tracker
