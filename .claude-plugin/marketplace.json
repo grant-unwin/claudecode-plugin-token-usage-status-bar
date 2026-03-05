@@ -13,7 +13,10 @@
       "author": {
         "name": "Grant Unwin"
       },
-      "source": "./",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/grant-unwin/claudecode-plugin-token-usage-status-bar.git"
+      },
       "category": "monitoring"
     }
   ]
