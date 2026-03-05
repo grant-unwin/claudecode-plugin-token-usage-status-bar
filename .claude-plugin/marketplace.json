@@ -13,7 +13,7 @@
       "author": {
         "name": "Grant Unwin"
       },
-      "source": ".",
+      "source": "./",
       "category": "monitoring"
     }
   ]
