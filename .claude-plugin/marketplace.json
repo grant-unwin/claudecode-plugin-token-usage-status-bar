@@ -1,16 +1,20 @@
 {
-  "name": "Token Usage Status Bar",
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "token-usage-status-bar",
   "description": "Displays a running count of input/output tokens and estimated cost after every Claude Code response.",
-  "version": "1.0.0",
+  "owner": {
+    "name": "Grant Unwin"
+  },
   "plugins": [
     {
       "name": "token-tracker",
       "description": "Tracks session token usage (input, output, cache) and prints a running total with estimated cost after each response. Also provides a /token-tracker:tokens slash command to view totals on demand.",
       "version": "1.0.0",
-      "source": {
-        "type": "github",
-        "repo": "grant-unwin/claudecode-plugin-token-usage-status-bar"
-      }
+      "author": {
+        "name": "Grant Unwin"
+      },
+      "source": ".",
+      "category": "monitoring"
     }
   ]
 }

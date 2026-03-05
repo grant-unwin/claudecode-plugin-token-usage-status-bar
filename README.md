@@ -31,7 +31,7 @@ claude --plugin-dir /path/to/claudecode-plugin-token-usage-status-bar
 In Claude Code, run:
 
 ```
-/plugin marketplace add grant/claudecode-plugin-token-usage-status-bar
+/plugin marketplace add grant-unwin/claudecode-plugin-token-usage-status-bar
 /plugin install token-tracker@Token Usage Status Bar
 ```
 
