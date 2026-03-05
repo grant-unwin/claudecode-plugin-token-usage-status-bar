@@ -40,7 +40,7 @@ In Claude Code, run:
 
 ## Slash command
 
-Use `/token-tracker:tokens` at any time to display the current session totals inline.
+Use `/token-tracker:usage` at any time to display the current session totals inline.
 
 ---
 
