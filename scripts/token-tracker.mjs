@@ -52,13 +52,13 @@ function fmt(n) {
   return Number(n || 0).toLocaleString("en-GB");
 }
 
-function estimateCost(t, pricing) {
-  return (
-    ((t.input_tokens || 0)                / 1_000_000) * pricing.input +
-    ((t.output_tokens || 0)               / 1_000_000) * pricing.output +
-    ((t.cache_creation_input_tokens || 0) / 1_000_000) * pricing.cache_write +
-    ((t.cache_read_input_tokens || 0)     / 1_000_000) * pricing.cache_read
-  );
+function costBreakdown(t, pricing) {
+  const input      = ((t.input_tokens || 0)                / 1_000_000) * pricing.input;
+  const output     = ((t.output_tokens || 0)               / 1_000_000) * pricing.output;
+  const cacheWrite = ((t.cache_creation_input_tokens || 0) / 1_000_000) * pricing.cache_write;
+  const cacheRead  = ((t.cache_read_input_tokens || 0)     / 1_000_000) * pricing.cache_read;
+  const total      = input + output + cacheWrite + cacheRead;
+  return { input, output, cacheWrite, cacheRead, total };
 }
 
 function fmtCost(cost) {
@@ -152,8 +152,8 @@ function writeStatusFiles(totals, sessionId, model) {
     fs.mkdirSync(STATS_DIR, { recursive: true });
 
     const pricing = getPricing(model);
-    const cost    = estimateCost(totals, pricing);
-    const total   = (totals.input_tokens || 0) + (totals.output_tokens || 0);
+    const costs   = costBreakdown(totals, pricing);
+    const totalTk = (totals.input_tokens || 0) + (totals.output_tokens || 0);
     const sid     = sessionId.slice(0, 8);
     const mName   = modelDisplayName(model);
 
@@ -163,32 +163,32 @@ function writeStatusFiles(totals, sessionId, model) {
       `│  Model   : ${mName.padEnd(48)}│`,
       `│  Turns   : ${String(totals.turns).padEnd(48)}│`,
       `├─────────────────────────────────────────────────────────┤`,
-      `│  Input   : ${fmt(totals.input_tokens).padStart(12)} tokens${" ".repeat(28)}│`,
-      `│  Output  : ${fmt(totals.output_tokens).padStart(12)} tokens${" ".repeat(28)}│`,
-      `│  Cache ↑ : ${fmt(totals.cache_creation_input_tokens).padStart(12)} tokens (written)${" ".repeat(14)}│`,
-      `│  Cache ↓ : ${fmt(totals.cache_read_input_tokens).padStart(12)} tokens (read)${" ".repeat(17)}│`,
+      `│  Input   : ${fmt(totals.input_tokens).padStart(12)} tokens    ${fmtCost(costs.input).padStart(10)}${" ".repeat(14)}│`,
+      `│  Output  : ${fmt(totals.output_tokens).padStart(12)} tokens    ${fmtCost(costs.output).padStart(10)}${" ".repeat(14)}│`,
+      `│  Cache ↑ : ${fmt(totals.cache_creation_input_tokens).padStart(12)} tokens    ${fmtCost(costs.cacheWrite).padStart(10)}${" ".repeat(14)}│`,
+      `│  Cache ↓ : ${fmt(totals.cache_read_input_tokens).padStart(12)} tokens    ${fmtCost(costs.cacheRead).padStart(10)}${" ".repeat(14)}│`,
       `├─────────────────────────────────────────────────────────┤`,
-      `│  Total   : ${fmt(total).padStart(12)} tokens  ~${fmtCost(cost).padStart(10)}${" ".repeat(17)}│`,
+      `│  Total   : ${fmt(totalTk).padStart(12)} tokens    ${fmtCost(costs.total).padStart(10)}${" ".repeat(14)}│`,
       `╰─────────────────────────────────────────────────────────╯`,
       `Updated: ${new Date().toLocaleTimeString("en-GB")}`,
     ].join("\n");
 
     fs.writeFileSync(sessionStatsPath(sessionId), box + "\n", "utf8");
-    fs.writeFileSync(sessionCompactPath(sessionId), `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(cost)}`, "utf8");
+    fs.writeFileSync(sessionCompactPath(sessionId), `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(costs.total)}`, "utf8");
 
     // Also write "latest" symlink-style files for backward compat (tmux, watch)
     const latestStats   = path.join(os.homedir(), ".claude", "token-stats.txt");
     const latestCompact = latestStats + ".compact";
     fs.writeFileSync(latestStats,   box + "\n", "utf8");
-    fs.writeFileSync(latestCompact, `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(cost)}`, "utf8");
+    fs.writeFileSync(latestCompact, `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(costs.total)}`, "utf8");
   } catch { /* non-fatal */ }
 }
 
 // ─── Print inline summary to stderr (shows in Claude Code terminal) ───────────
 function printSummary(totals, model, sessionEnd = false) {
   const pricing = getPricing(model);
-  const cost    = estimateCost(totals, pricing);
-  const total   = (totals.input_tokens || 0) + (totals.output_tokens || 0);
+  const costs   = costBreakdown(totals, pricing);
+  const totalTk = (totals.input_tokens || 0) + (totals.output_tokens || 0);
   const label   = sessionEnd ? "Session Final" : "Token Usage";
   const mName   = modelDisplayName(model);
 
@@ -196,9 +196,11 @@ function printSummary(totals, model, sessionEnd = false) {
     ``,
     `┌─ ${label} ${"─".repeat(50 - label.length - 1)}┐`,
     `│  Model  : ${mName.padEnd(41)}│`,
-    `│  Input  : ${fmt(totals.input_tokens).padStart(12)}   Output : ${fmt(totals.output_tokens).padStart(12)}  │`,
-    `│  Cache↑ : ${fmt(totals.cache_creation_input_tokens).padStart(12)}   Cache↓ : ${fmt(totals.cache_read_input_tokens).padStart(12)}  │`,
-    `│  Total  : ${fmt(total).padStart(12)} tokens       ~${fmtCost(cost).padStart(10)}  │`,
+    `│  Input  : ${fmt(totals.input_tokens).padStart(12)}  ${fmtCost(costs.input).padStart(10)}${" ".repeat(18)}│`,
+    `│  Output : ${fmt(totals.output_tokens).padStart(12)}  ${fmtCost(costs.output).padStart(10)}${" ".repeat(18)}│`,
+    `│  Cache↑ : ${fmt(totals.cache_creation_input_tokens).padStart(12)}  ${fmtCost(costs.cacheWrite).padStart(10)}${" ".repeat(18)}│`,
+    `│  Cache↓ : ${fmt(totals.cache_read_input_tokens).padStart(12)}  ${fmtCost(costs.cacheRead).padStart(10)}${" ".repeat(18)}│`,
+    `│  Total  : ${fmt(totalTk).padStart(12)}  ${fmtCost(costs.total).padStart(10)}${" ".repeat(18)}│`,
     `└${"─".repeat(52)}┘`,
     ``,
   ].join("\n");
