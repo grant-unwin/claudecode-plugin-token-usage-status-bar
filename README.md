@@ -8,6 +8,7 @@ After each response, this appears in your Claude Code terminal:
 
 ```
 ┌─ Token Usage ────────────────────────────────────────┐
+│  Model  : Opus 4.6                                   │
 │  Input  :        4,821   Output :        1,203  │
 │  Cache↑ :            0   Cache↓ :            0  │
 │  Total  :        6,024 tokens       ~  $0.0326  │
@@ -32,7 +33,7 @@ In Claude Code, run:
 
 ```
 /plugin marketplace add grant-unwin/claudecode-plugin-token-usage-status-bar
-/plugin install token-tracker@Token Usage Status Bar
+/plugin install token-tracker@token-usage-status-bar
 ```
 
 ---
@@ -68,22 +69,18 @@ watch -n 1 cat ~/.claude/token-stats.txt
 
 ## Pricing
 
-Defaults to **Claude Sonnet 4.5** rates. Edit the `PRICING` constant in `scripts/token-tracker.mjs`:
+The plugin automatically detects which Claude model is being used and applies the correct pricing. Prices are per 1M tokens (source: [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)):
 
-```js
-const PRICING = {
-  input:        3.00,   // per 1M tokens
-  output:      15.00,
-  cache_write:  3.75,
-  cache_read:   0.30,
-};
-```
+| Model       | Input  | Output | Cache Write | Cache Read |
+|-------------|--------|--------|-------------|------------|
+| Opus 4.6    | $5     | $25    | $6.25       | $0.50      |
+| Opus 4.5    | $5     | $25    | $6.25       | $0.50      |
+| Opus 4.1    | $15    | $75    | $18.75      | $1.50      |
+| Sonnet 4.6  | $3     | $15    | $3.75       | $0.30      |
+| Sonnet 4.5  | $3     | $15    | $3.75       | $0.30      |
+| Haiku 4.5   | $1     | $5     | $1.25       | $0.10      |
 
-| Model       | Input  | Output |
-|-------------|--------|--------|
-| Opus 4.5    | $15    | $75    |
-| Sonnet 4.5  | $3     | $15    |
-| Haiku 4.5   | $0.80  | $4     |
+If the model can't be detected, Sonnet pricing is used as a fallback.
 
 ---
 
