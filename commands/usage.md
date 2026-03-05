@@ -2,8 +2,10 @@
 description: Show current session token usage and estimated cost
 ---
 
-Read the file at ~/.claude/token-stats.txt and display its contents to the user verbatim.
+Run the following command and display its output to the user verbatim:
 
-If the file does not exist, tell the user that no token data is available yet for this session — the tracker updates after each response.
+```
+node ${CLAUDE_PLUGIN_ROOT}/scripts/token-tracker.mjs --query
+```
 
-Note: This shows the stats from the most recently active session. If you have multiple concurrent sessions, the data reflects whichever session last completed a response.
+If the output says "No transcript data found", tell the user that no token data is available yet.

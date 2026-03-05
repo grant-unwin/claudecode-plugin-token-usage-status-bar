@@ -16,8 +16,10 @@ import path from "path";
 import readline from "readline";
 
 const SESSION_END  = process.argv.includes("--session-end");
+const QUERY_MODE   = process.argv.includes("--query");
 const CACHE_DIR    = path.join(os.homedir(), ".claude", "token-tracker");
 const STATS_DIR    = path.join(os.homedir(), ".claude", "token-tracker", "sessions");
+const PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 const STALE_DAYS   = 7;
 
 // ─── Pricing (per 1M tokens) ─────────────────────────────────────────────────
@@ -144,46 +146,6 @@ function sessionCompactPath(sessionId) {
   return path.join(STATS_DIR, `${sessionId}.compact`);
 }
 
-// ─── Write persistent status files (per-session) ────────────────────────────
-function writeStatusFiles(totals, sessionId, model) {
-  if (!sessionId) return;
-
-  try {
-    fs.mkdirSync(STATS_DIR, { recursive: true });
-
-    const pricing = getPricing(model);
-    const costs   = costBreakdown(totals, pricing);
-    const totalTk = (totals.input_tokens || 0) + (totals.output_tokens || 0);
-    const sid     = sessionId.slice(0, 8);
-    const mName   = modelDisplayName(model);
-
-    const box = [
-      `╭─ Claude Token Tracker ──────────────────────────────────╮`,
-      `│  Session : ${sid.padEnd(48)}│`,
-      `│  Model   : ${mName.padEnd(48)}│`,
-      `│  Turns   : ${String(totals.turns).padEnd(48)}│`,
-      `├─────────────────────────────────────────────────────────┤`,
-      `│  Input   : ${fmt(totals.input_tokens).padStart(12)} tokens    ${fmtCost(costs.input).padStart(10)}${" ".repeat(14)}│`,
-      `│  Output  : ${fmt(totals.output_tokens).padStart(12)} tokens    ${fmtCost(costs.output).padStart(10)}${" ".repeat(14)}│`,
-      `│  Cache ↑ : ${fmt(totals.cache_creation_input_tokens).padStart(12)} tokens    ${fmtCost(costs.cacheWrite).padStart(10)}${" ".repeat(14)}│`,
-      `│  Cache ↓ : ${fmt(totals.cache_read_input_tokens).padStart(12)} tokens    ${fmtCost(costs.cacheRead).padStart(10)}${" ".repeat(14)}│`,
-      `├─────────────────────────────────────────────────────────┤`,
-      `│  Total   : ${fmt(totalTk).padStart(12)} tokens    ${fmtCost(costs.total).padStart(10)}${" ".repeat(14)}│`,
-      `╰─────────────────────────────────────────────────────────╯`,
-      `Updated: ${new Date().toLocaleTimeString("en-GB")}`,
-    ].join("\n");
-
-    fs.writeFileSync(sessionStatsPath(sessionId), box + "\n", "utf8");
-    fs.writeFileSync(sessionCompactPath(sessionId), `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(costs.total)}`, "utf8");
-
-    // Also write "latest" symlink-style files for backward compat (tmux, watch)
-    const latestStats   = path.join(os.homedir(), ".claude", "token-stats.txt");
-    const latestCompact = latestStats + ".compact";
-    fs.writeFileSync(latestStats,   box + "\n", "utf8");
-    fs.writeFileSync(latestCompact, `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(costs.total)}`, "utf8");
-  } catch { /* non-fatal */ }
-}
-
 // ─── Print inline summary to stderr (shows in Claude Code terminal) ───────────
 function printSummary(totals, model, sessionEnd = false) {
   const pricing = getPricing(model);
@@ -238,8 +200,72 @@ function pruneStaleFiles() {
   } catch { /* non-fatal */ }
 }
 
+// ─── Find the most recently modified transcript JSONL ────────────────────────
+function findLatestTranscript() {
+  if (!fs.existsSync(PROJECTS_DIR)) return null;
+
+  let latest = null;
+  let latestMtime = 0;
+
+  for (const projectDir of fs.readdirSync(PROJECTS_DIR)) {
+    const projectPath = path.join(PROJECTS_DIR, projectDir);
+    if (!fs.statSync(projectPath).isDirectory()) continue;
+
+    for (const file of fs.readdirSync(projectPath)) {
+      if (!file.endsWith(".jsonl")) continue;
+      const filePath = path.join(projectPath, file);
+      const stat = fs.statSync(filePath);
+      if (stat.mtimeMs > latestMtime) {
+        latestMtime = stat.mtimeMs;
+        latest = { path: filePath, sessionId: file.replace(".jsonl", "") };
+      }
+    }
+  }
+
+  return latest;
+}
+
+// ─── Build formatted box (shared by writeStatusFiles and query mode) ─────────
+function buildBox(totals, sessionId, model) {
+  const pricing = getPricing(model);
+  const costs   = costBreakdown(totals, pricing);
+  const totalTk = (totals.input_tokens || 0) + (totals.output_tokens || 0);
+  const sid     = (sessionId ?? "--------").slice(0, 8);
+  const mName   = modelDisplayName(model);
+
+  return [
+    `╭─ Claude Token Tracker ──────────────────────────────────╮`,
+    `│  Session : ${sid.padEnd(48)}│`,
+    `│  Model   : ${mName.padEnd(48)}│`,
+    `│  Turns   : ${String(totals.turns).padEnd(48)}│`,
+    `├─────────────────────────────────────────────────────────┤`,
+    `│  Input   : ${fmt(totals.input_tokens).padStart(12)} tokens    ${fmtCost(costs.input).padStart(10)}${" ".repeat(14)}│`,
+    `│  Output  : ${fmt(totals.output_tokens).padStart(12)} tokens    ${fmtCost(costs.output).padStart(10)}${" ".repeat(14)}│`,
+    `│  Cache ↑ : ${fmt(totals.cache_creation_input_tokens).padStart(12)} tokens    ${fmtCost(costs.cacheWrite).padStart(10)}${" ".repeat(14)}│`,
+    `│  Cache ↓ : ${fmt(totals.cache_read_input_tokens).padStart(12)} tokens    ${fmtCost(costs.cacheRead).padStart(10)}${" ".repeat(14)}│`,
+    `├─────────────────────────────────────────────────────────┤`,
+    `│  Total   : ${fmt(totalTk).padStart(12)} tokens    ${fmtCost(costs.total).padStart(10)}${" ".repeat(14)}│`,
+    `╰─────────────────────────────────────────────────────────╯`,
+    `Updated: ${new Date().toLocaleTimeString("en-GB")}`,
+  ].join("\n");
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
+  // Query mode: parse the latest transcript directly and output to stdout
+  if (QUERY_MODE) {
+    const latest = findLatestTranscript();
+    if (!latest) {
+      process.stdout.write("No transcript data found.\n");
+      process.exit(0);
+    }
+    const { totals, model } = await parseTranscript(latest.path);
+    const box = buildBox(totals, latest.sessionId, model);
+    process.stdout.write(box + "\n");
+    process.exit(0);
+  }
+
+  // Hook mode: read payload from stdin
   const raw = await readStdin();
 
   let payload = {};
@@ -253,7 +279,26 @@ async function main() {
 
   try {
     const { totals, model } = await parseTranscript(transcript_path);
-    writeStatusFiles(totals, session_id, model);
+    const box = buildBox(totals, session_id, model);
+
+    // Write per-session and latest stats files
+    if (session_id) {
+      try {
+        fs.mkdirSync(STATS_DIR, { recursive: true });
+        const pricing = getPricing(model);
+        const costs   = costBreakdown(totals, pricing);
+        const mName   = modelDisplayName(model);
+
+        fs.writeFileSync(sessionStatsPath(session_id), box + "\n", "utf8");
+        fs.writeFileSync(sessionCompactPath(session_id), `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(costs.total)}`, "utf8");
+
+        const latestStats   = path.join(os.homedir(), ".claude", "token-stats.txt");
+        const latestCompact = latestStats + ".compact";
+        fs.writeFileSync(latestStats,   box + "\n", "utf8");
+        fs.writeFileSync(latestCompact, `⬡ ${mName} IN:${fmt(totals.input_tokens)} OUT:${fmt(totals.output_tokens)} ~${fmtCost(costs.total)}`, "utf8");
+      } catch { /* non-fatal */ }
+    }
+
     printSummary(totals, model, SESSION_END);
 
     // Persist per-session cache
